@@ -11,6 +11,9 @@ const KEYS = {
   HISTORY: '@camstream_history',
   FACE_BLUR_ENABLED: '@camstream_face_blur',
   QR_SAFETY_ENABLED: '@camstream_qr_safety',
+  FCM_TOKEN: 'fcm_token',
+  DEVICE_REGISTERED: 'device_registered',
+  TTS_ENABLED: 'tts_enabled',
 };
 
 class StorageService {
@@ -63,7 +66,7 @@ class StorageService {
     const ip = await this.getCameraIp();
     if (!ip) return null;
     const { username, password } = await this.getStreamCredentials();
-    return `http://${username}:${password}@${ip}:5000/video`;
+    return `http://${username}:${password}@${ip}:5000/video_feed`;
   }
 
   // Recordings
@@ -134,6 +137,31 @@ class StorageService {
   // Clear All
   async clearAll(): Promise<void> {
     await AsyncStorage.multiRemove(Object.values(KEYS));
+  }
+
+  async saveFcmToken(token: string): Promise<void> {
+    await AsyncStorage.setItem(KEYS.FCM_TOKEN, token);
+  }
+
+  async getFcmToken(): Promise<string | null> {
+    return await AsyncStorage.getItem(KEYS.FCM_TOKEN);
+  }
+
+  async saveDeviceRegistered(registered: boolean): Promise<void> {
+    await AsyncStorage.setItem(KEYS.DEVICE_REGISTERED, JSON.stringify(registered));
+  }
+
+  async isDeviceRegistered(): Promise<boolean> {
+    const value = await AsyncStorage.getItem(KEYS.DEVICE_REGISTERED);
+    return value ? JSON.parse(value) : false;
+  }
+  async saveTtsEnabled(enabled: boolean): Promise<void> {
+    await AsyncStorage.setItem(KEYS.TTS_ENABLED, JSON.stringify(enabled));
+  }
+
+  async getTtsEnabled(): Promise<boolean> {
+    const value = await AsyncStorage.getItem(KEYS.TTS_ENABLED);
+    return value !== null ? JSON.parse(value) : true; // Default: enabled
   }
 }
 

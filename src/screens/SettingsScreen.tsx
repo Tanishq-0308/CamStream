@@ -9,21 +9,23 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useAuth } from '../context/AuthContext';
 import CamApi from '../api/camApi';
 import StorageService from '../services/StorageService';
 import { NetworkStatus, CameraSettings, SystemStats } from '../types';
 
 const SettingsScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<DrawerNavigationProp<any>>();
   const { logout, cameraIp } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingVideo, setIsSavingVideo] = useState(false);
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null);
   const [cameraSettings, setCameraSettings] = useState<CameraSettings>({
     flip_h: false,
@@ -36,6 +38,10 @@ const SettingsScreen: React.FC = () => {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [faceBlurEnabled, setFaceBlurEnabled] = useState(false);
   const [qrSafetyEnabled, setQrSafetyEnabled] = useState(false);
+
+  // Loading states for individual toggles
+  const [togglingFlipH, setTogglingFlipH] = useState(false);
+  const [togglingFlipV, setTogglingFlipV] = useState(false);
   const [togglingFaceBlur, setTogglingFaceBlur] = useState(false);
   const [togglingQrSafety, setTogglingQrSafety] = useState(false);
 
@@ -48,12 +54,13 @@ const SettingsScreen: React.FC = () => {
     try {
       const serverUrl = await StorageService.getServerUrl();
       CamApi.setBaseUrl(serverUrl);
-      
-      // Load sequentially to avoid race conditions
-      await loadNetworkStatus();
-      await loadCameraSettings();
-      await loadSystemStats();
-      await loadModuleStates();
+
+      await Promise.all([
+        loadNetworkStatus(),
+        loadCameraSettings(),
+        loadSystemStats(),
+        loadModuleStates(),
+      ]);
     } catch (error) {
       console.error('Error loading settings:', error);
     } finally {
@@ -65,9 +72,9 @@ const SettingsScreen: React.FC = () => {
     try {
       const status = await CamApi.getNetworkStatus();
       setNetworkStatus(status);
-        if (status.wifi?.ip) {
+      if (status.wifi?.ip) {
         await StorageService.saveCameraIp(status.wifi.ip);
-        }
+      }
     } catch (error) {
       console.error('Error loading network status:', error);
     }
@@ -104,20 +111,35 @@ const SettingsScreen: React.FC = () => {
     setIsRefreshing(false);
   }, []);
 
-  const saveCameraSettings = async () => {
-    setIsSaving(true);
+  // Toggle Flip Horizontal - Immediate API call
+  const toggleFlipH = async (value: boolean) => {
+    setTogglingFlipH(true);
     try {
-      const updated = await CamApi.updateCameraSettings(cameraSettings);
+      const updated = await CamApi.updateCameraSettings({ ...cameraSettings, flip_h: value });
       setCameraSettings(updated);
-      await StorageService.addHistory('settings_changed', `fps=${updated.fps}, ${updated.width}x${updated.height}`);
-      Alert.alert('Success', 'Camera settings saved');
+      await StorageService.addHistory('settings_changed', `Flip H ${value ? 'enabled' : 'disabled'}`);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save settings');
+      Alert.alert('Error', error.message || 'Failed to update flip horizontal');
     } finally {
-      setIsSaving(false);
+      setTogglingFlipH(false);
     }
   };
 
+  // Toggle Flip Vertical - Immediate API call
+  const toggleFlipV = async (value: boolean) => {
+    setTogglingFlipV(true);
+    try {
+      const updated = await CamApi.updateCameraSettings({ ...cameraSettings, flip_v: value });
+      setCameraSettings(updated);
+      await StorageService.addHistory('settings_changed', `Flip V ${value ? 'enabled' : 'disabled'}`);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update flip vertical');
+    } finally {
+      setTogglingFlipV(false);
+    }
+  };
+
+  // Toggle Face Blur - Immediate API call
   const toggleFaceBlur = async (value: boolean) => {
     setTogglingFaceBlur(true);
     try {
@@ -132,6 +154,7 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  // Toggle QR Safety - Immediate API call
   const toggleQrSafety = async (value: boolean) => {
     setTogglingQrSafety(true);
     try {
@@ -146,47 +169,62 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
+  // Save Video Settings (Resolution, FPS, Rotation)
+  const saveVideoSettings = async () => {
+    setIsSavingVideo(true);
+    try {
+      const updated = await CamApi.updateCameraSettings(cameraSettings);
+      setCameraSettings(updated);
+      await StorageService.addHistory(
+        'settings_changed',
+        `${updated.width}x${updated.height} @ ${updated.fps}fps, ${updated.rotation}°`
+      );
+      Alert.alert('Success', 'Video settings saved');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save video settings');
+    } finally {
+      setIsSavingVideo(false);
+    }
   };
 
-  const showResolutionPicker = () => {
+  const cycleResolution = () => {
     const resolutions = [
-      { label: '320 x 240', width: 320, height: 240 },
-      { label: '640 x 480', width: 640, height: 480 },
-      { label: '800 x 600', width: 800, height: 600 },
-      { label: '1280 x 720', width: 1280, height: 720 },
-      { label: '1920 x 1080', width: 1920, height: 1080 },
+      { width: 320, height: 240 },
+      { width: 640, height: 480 },
+      { width: 800, height: 600 },
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
     ];
-    // For simplicity, just cycle through resolutions
     const currentIdx = resolutions.findIndex(
-      r => r.width === cameraSettings.width && r.height === cameraSettings.height
+      (r) => r.width === cameraSettings.width && r.height === cameraSettings.height
     );
     const nextIdx = (currentIdx + 1) % resolutions.length;
     const next = resolutions[nextIdx];
     setCameraSettings({ ...cameraSettings, width: next.width, height: next.height });
   };
 
-  const showFpsPicker = () => {
+  const cycleFps = () => {
     const fpsOptions = [5, 10, 15, 20, 25, 30];
     const currentIdx = fpsOptions.indexOf(cameraSettings.fps);
     const nextIdx = (currentIdx + 1) % fpsOptions.length;
     setCameraSettings({ ...cameraSettings, fps: fpsOptions[nextIdx] });
   };
 
-  const showRotationPicker = () => {
+  const cycleRotation = () => {
     const rotations = [0, 90, 180, 270];
     const currentIdx = rotations.indexOf(cameraSettings.rotation);
     const nextIdx = (currentIdx + 1) % rotations.length;
     setCameraSettings({ ...cameraSettings, rotation: rotations[nextIdx] });
   };
 
+  const openDrawer = () => {
+    navigation.dispatch(DrawerActions.openDrawer());
+  };
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E1E1E" />
         <ActivityIndicator size="large" color="#1E88E5" />
       </View>
     );
@@ -194,12 +232,17 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#1E1E1E" />
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#FFF" />
+        <TouchableOpacity onPress={openDrawer} style={styles.menuButton}>
+          <Icon name="menu" size={28} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={styles.headerCenter}>
+          <Icon name="settings" size={24} color="#1E88E5" />
+          <Text style={styles.headerTitle}>Settings</Text>
+        </View>
         <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
           <Icon name="refresh" size={24} color="#FFF" />
         </TouchableOpacity>
@@ -217,130 +260,142 @@ const SettingsScreen: React.FC = () => {
             <Icon
               name="wifi"
               size={24}
-              color={networkStatus?.wifi.connected ? '#1E88E5' : '#F44336'}
+              color={networkStatus?.wifi?.connected ? '#4CAF50' : '#F44336'}
             />
             <Text style={styles.cardTitle}>Network Status</Text>
-          </View>
-          {networkStatus && (
-            <View style={styles.cardContent}>
-              <SettingsRow label="Status" value={networkStatus.state.toUpperCase()} />
-              <SettingsRow label="WiFi SSID" value={networkStatus.wifi.ssid} />
-              <SettingsRow label="Camera IP" value={cameraIp || '-'} />
-              <SettingsRow label="Stream URL" value={`http://${cameraIp}:5000/video`} />
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: networkStatus?.wifi?.connected ? '#4CAF5020' : '#F4433620' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  { color: networkStatus?.wifi?.connected ? '#4CAF50' : '#F44336' },
+                ]}
+              >
+                {networkStatus?.wifi?.connected ? 'Connected' : 'Disconnected'}
+              </Text>
             </View>
-          )}
-        </View>
-
-        {/* Camera Settings Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Icon name="camera-alt" size={24} color="#1E88E5" />
-            <Text style={styles.cardTitle}>Camera Settings</Text>
           </View>
           <View style={styles.cardContent}>
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Flip Horizontal</Text>
-              <Switch
-                value={cameraSettings.flip_h}
-                onValueChange={(value) =>
-                  setCameraSettings({ ...cameraSettings, flip_h: value })
-                }
-                trackColor={{ false: '#444', true: '#1E88E5' }}
-                thumbColor="#FFF"
-              />
-            </View>
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Flip Vertical</Text>
-              <Switch
-                value={cameraSettings.flip_v}
-                onValueChange={(value) =>
-                  setCameraSettings({ ...cameraSettings, flip_v: value })
-                }
-                trackColor={{ false: '#444', true: '#1E88E5' }}
-                thumbColor="#FFF"
-              />
-            </View>
+            <InfoRow icon="router" label="SSID" value={networkStatus?.wifi?.ssid || 'N/A'} />
+            <InfoRow icon="language" label="Camera IP" value={cameraIp || 'N/A'} />
+            <InfoRow
+              icon="videocam"
+              label="Stream URL"
+              value={cameraIp ? `http://${cameraIp}:5000/video` : 'N/A'}
+              small
+            />
+          </View>
+        </View>
+
+        {/* Quick Toggles Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Icon name="toggle-on" size={24} color="#1E88E5" />
+            <Text style={styles.cardTitle}>Quick Settings</Text>
+          </View>
+          <View style={styles.cardContent}>
+            <ToggleRow
+              icon="flip"
+              label="Flip Horizontal"
+              description="Mirror the video horizontally"
+              value={cameraSettings.flip_h}
+              onValueChange={toggleFlipH}
+              isLoading={togglingFlipH}
+            />
             <View style={styles.divider} />
-            <TouchableOpacity style={styles.selectRow} onPress={showResolutionPicker}>
-              <Text style={styles.selectLabel}>Resolution</Text>
-              <View style={styles.selectValue}>
-                <Text style={styles.selectValueText}>
-                  {cameraSettings.width} x {cameraSettings.height}
+            <ToggleRow
+              icon="flip-camera-android"
+              label="Flip Vertical"
+              description="Flip the video vertically"
+              value={cameraSettings.flip_v}
+              onValueChange={toggleFlipV}
+              isLoading={togglingFlipV}
+            />
+            <View style={styles.divider} />
+            <ToggleRow
+              icon="face"
+              label="Face Blur"
+              description="Blur detected faces in stream"
+              value={faceBlurEnabled}
+              onValueChange={toggleFaceBlur}
+              isLoading={togglingFaceBlur}
+            />
+            <View style={styles.divider} />
+            <ToggleRow
+              icon="qr-code-scanner"
+              label="QR Safety"
+              description="Scan and validate QR codes"
+              value={qrSafetyEnabled}
+              onValueChange={toggleQrSafety}
+              isLoading={togglingQrSafety}
+            />
+          </View>
+        </View>
+
+        {/* Video Settings Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Icon name="videocam" size={24} color="#1E88E5" />
+            <Text style={styles.cardTitle}>Video Settings</Text>
+          </View>
+          <View style={styles.cardContent}>
+            <TouchableOpacity style={styles.settingRow} onPress={cycleResolution}>
+              <View style={styles.settingLeft}>
+                <Icon name="aspect-ratio" size={22} color="#888" />
+                <Text style={styles.settingLabel}>Resolution</Text>
+              </View>
+              <View style={styles.settingRight}>
+                <Text style={styles.settingValue}>
+                  {cameraSettings.width} × {cameraSettings.height}
                 </Text>
-                <Icon name="chevron-right" size={20} color="#1E88E5" />
+                <Icon name="chevron-right" size={20} color="#666" />
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.selectRow} onPress={showFpsPicker}>
-              <Text style={styles.selectLabel}>Frame Rate</Text>
-              <View style={styles.selectValue}>
-                <Text style={styles.selectValueText}>{cameraSettings.fps} FPS</Text>
-                <Icon name="chevron-right" size={20} color="#1E88E5" />
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.settingRow} onPress={cycleFps}>
+              <View style={styles.settingLeft}>
+                <Icon name="speed" size={22} color="#888" />
+                <Text style={styles.settingLabel}>Frame Rate</Text>
+              </View>
+              <View style={styles.settingRight}>
+                <Text style={styles.settingValue}>{cameraSettings.fps} FPS</Text>
+                <Icon name="chevron-right" size={20} color="#666" />
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.selectRow} onPress={showRotationPicker}>
-              <Text style={styles.selectLabel}>Rotation</Text>
-              <View style={styles.selectValue}>
-                <Text style={styles.selectValueText}>{cameraSettings.rotation}°</Text>
-                <Icon name="chevron-right" size={20} color="#1E88E5" />
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity style={styles.settingRow} onPress={cycleRotation}>
+              <View style={styles.settingLeft}>
+                <Icon name="rotate-right" size={22} color="#888" />
+                <Text style={styles.settingLabel}>Rotation</Text>
+              </View>
+              <View style={styles.settingRight}>
+                <Text style={styles.settingValue}>{cameraSettings.rotation}°</Text>
+                <Icon name="chevron-right" size={20} color="#666" />
               </View>
             </TouchableOpacity>
+
             <TouchableOpacity
-              style={[styles.saveButton, isSaving && styles.buttonDisabled]}
-              onPress={saveCameraSettings}
-              disabled={isSaving}
+              style={[styles.saveButton, isSavingVideo && styles.buttonDisabled]}
+              onPress={saveVideoSettings}
+              disabled={isSavingVideo}
             >
-              {isSaving ? (
+              {isSavingVideo ? (
                 <ActivityIndicator color="#FFF" size="small" />
               ) : (
                 <>
                   <Icon name="save" size={20} color="#FFF" />
-                  <Text style={styles.saveButtonText}>Save Settings</Text>
+                  <Text style={styles.saveButtonText}>Apply Video Settings</Text>
                 </>
               )}
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Modules Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Icon name="extension" size={24} color="#1E88E5" />
-            <Text style={styles.cardTitle}>Modules</Text>
-          </View>
-          <View style={styles.cardContent}>
-            <View style={styles.moduleRow}>
-              <View style={styles.moduleInfo}>
-                <Text style={styles.moduleLabel}>Face Blur</Text>
-                <Text style={styles.moduleDescription}>Blur faces in video stream</Text>
-              </View>
-              {togglingFaceBlur ? (
-                <ActivityIndicator size="small" color="#1E88E5" />
-              ) : (
-                <Switch
-                  value={faceBlurEnabled}
-                  onValueChange={toggleFaceBlur}
-                  trackColor={{ false: '#444', true: '#1E88E5' }}
-                  thumbColor="#FFF"
-                />
-              )}
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.moduleRow}>
-              <View style={styles.moduleInfo}>
-                <Text style={styles.moduleLabel}>QR Safety</Text>
-                <Text style={styles.moduleDescription}>Scan and validate QR codes</Text>
-              </View>
-              {togglingQrSafety ? (
-                <ActivityIndicator size="small" color="#1E88E5" />
-              ) : (
-                <Switch
-                  value={qrSafetyEnabled}
-                  onValueChange={toggleQrSafety}
-                  trackColor={{ false: '#444', true: '#1E88E5' }}
-                  thumbColor="#FFF"
-                />
-              )}
-            </View>
           </View>
         </View>
 
@@ -353,36 +408,46 @@ const SettingsScreen: React.FC = () => {
               <Icon name="refresh" size={20} color="#1E88E5" />
             </TouchableOpacity>
           </View>
-          {systemStats && (
+          {systemStats ? (
             <View style={styles.cardContent}>
               <StatProgressRow
                 label="CPU"
-                value={`${systemStats.cpu_percent}%`}
-                progress={systemStats.cpu_percent / 100}
+                value={`${systemStats.cpu_percent || 0}%`}
+                progress={(systemStats.cpu_percent || 0) / 100}
               />
               <StatProgressRow
                 label="Memory"
-                value={`${Math.round(systemStats.memory_used_mb)} / ${Math.round(systemStats.memory_total_mb)} MB`}
-                progress={systemStats.memory_percent / 100}
+                value={`${Math.round(systemStats.memory_used_mb || 0)} / ${Math.round(
+                  systemStats.memory_total_mb || 0
+                )} MB`}
+                progress={(systemStats.memory_percent || 0) / 100}
               />
               <StatProgressRow
                 label="Disk"
-                value={`${systemStats.disk_used_gb.toFixed(1)} / ${systemStats.disk_total_gb.toFixed(1)} GB`}
-                progress={systemStats.disk_percent / 100}
+                value={`${(systemStats.disk_used_gb || 0).toFixed(1)} / ${(
+                  systemStats.disk_total_gb || 0
+                ).toFixed(1)} GB`}
+                progress={(systemStats.disk_percent || 0) / 100}
               />
-              <View style={styles.statsRow}>
-                <SettingsRow label="Temperature" value={`${systemStats.temperature}°C`} />
-                <SettingsRow label="Uptime" value={systemStats.uptime} />
+              <View style={styles.statsGrid}>
+                <View style={styles.statItem}>
+                  <Icon name="thermostat" size={20} color="#FF9800" />
+                  <Text style={styles.statItemValue}>{systemStats.temperature || 0}°C</Text>
+                  <Text style={styles.statItemLabel}>Temp</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Icon name="schedule" size={20} color="#4CAF50" />
+                  <Text style={styles.statItemValue}>{systemStats.uptime || 'N/A'}</Text>
+                  <Text style={styles.statItemLabel}>Uptime</Text>
+                </View>
               </View>
+            </View>
+          ) : (
+            <View style={styles.cardContent}>
+              <Text style={styles.noDataText}>No system stats available</Text>
             </View>
           )}
         </View>
-
-        {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Icon name="logout" size={20} color="#F44336" />
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -390,15 +455,51 @@ const SettingsScreen: React.FC = () => {
   );
 };
 
-const SettingsRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <View style={styles.settingsRow}>
-    <Text style={styles.settingsLabel}>{label}</Text>
-    <Text style={styles.settingsValue} numberOfLines={1}>
+// Info Row Component
+const InfoRow: React.FC<{ icon: string; label: string; value: string; small?: boolean }> = ({
+  icon,
+  label,
+  value,
+  small,
+}) => (
+  <View style={styles.infoRow}>
+    <Icon name={icon} size={20} color="#666" style={styles.infoIcon} />
+    <Text style={styles.infoLabel}>{label}</Text>
+    <Text style={[styles.infoValue, small && styles.infoValueSmall]} numberOfLines={1}>
       {value}
     </Text>
   </View>
 );
 
+// Toggle Row Component
+const ToggleRow: React.FC<{
+  icon: string;
+  label: string;
+  description: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  isLoading: boolean;
+}> = ({ icon, label, description, value, onValueChange, isLoading }) => (
+  <View style={styles.toggleRow}>
+    <Icon name={icon} size={24} color="#1E88E5" style={styles.toggleIcon} />
+    <View style={styles.toggleInfo}>
+      <Text style={styles.toggleLabel}>{label}</Text>
+      <Text style={styles.toggleDescription}>{description}</Text>
+    </View>
+    {isLoading ? (
+      <ActivityIndicator size="small" color="#1E88E5" style={styles.toggleLoader} />
+    ) : (
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: '#444', true: '#1E88E5' }}
+        thumbColor={value ? '#FFF' : '#CCC'}
+      />
+    )}
+  </View>
+);
+
+// Stat Progress Row Component
 const StatProgressRow: React.FC<{ label: string; value: string; progress: number }> = ({
   label,
   value,
@@ -442,22 +543,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 12,
     backgroundColor: '#1E1E1E',
   },
-  backButton: {
-    padding: 8,
+  menuButton: { padding: 8 },
+  headerCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
   },
-  headerTitle: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  refreshButton: {
-    padding: 8,
-  },
+  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginLeft: 8 },
+  refreshButton: { padding: 8 },
   content: {
     flex: 1,
     padding: 16,
@@ -473,7 +571,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#2A2A2A',
   },
   cardTitle: {
     color: '#FFF',
@@ -482,57 +580,95 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     flex: 1,
   },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   cardContent: {
     padding: 16,
   },
-  settingsRow: {
+  divider: {
+    height: 1,
+    backgroundColor: '#2A2A2A',
+    marginVertical: 12,
+  },
+  // Info Row
+  infoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 8,
   },
-  settingsLabel: {
-    color: '#999',
-    fontSize: 14,
+  infoIcon: {
+    marginRight: 12,
   },
-  settingsValue: {
+  infoLabel: {
+    color: '#888',
+    fontSize: 14,
+    width: 100,
+  },
+  infoValue: {
     color: '#FFF',
     fontSize: 14,
-    fontWeight: '500',
     flex: 1,
     textAlign: 'right',
   },
-  switchRow: {
+  infoValueSmall: {
+    fontSize: 12,
+  },
+  // Toggle Row
+  toggleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
   },
-  switchLabel: {
+  toggleIcon: {
+    marginRight: 12,
+  },
+  toggleInfo: {
+    flex: 1,
+  },
+  toggleLabel: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#333',
-    marginVertical: 8,
+  toggleDescription: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
   },
-  selectRow: {
+  toggleLoader: {
+    marginRight: 8,
+  },
+  // Setting Row
+  settingRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
-  selectLabel: {
-    color: '#FFF',
-    fontSize: 14,
-  },
-  selectValue: {
+  settingLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  selectValueText: {
+  settingLabel: {
+    color: '#FFF',
+    fontSize: 15,
+    marginLeft: 12,
+  },
+  settingRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingValue: {
     color: '#1E88E5',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
     marginRight: 4,
   },
   saveButton: {
@@ -540,8 +676,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#1E88E5',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 14,
     marginTop: 16,
   },
   saveButtonText: {
@@ -551,73 +687,66 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
-  moduleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  moduleInfo: {
-    flex: 1,
-  },
-  moduleLabel: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  moduleDescription: {
-    color: '#999',
-    fontSize: 12,
-    marginTop: 2,
-  },
+  // Stats
   refreshStatsButton: {
     padding: 4,
   },
   statRow: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   statHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   statLabel: {
-    color: '#999',
-    fontSize: 12,
+    color: '#888',
+    fontSize: 13,
   },
   statValue: {
     color: '#FFF',
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
   },
   progressBar: {
-    height: 6,
+    height: 8,
     backgroundColor: '#333',
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 4,
   },
-  statsRow: {
-    marginTop: 8,
-  },
-  logoutButton: {
+  statsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F44336',
-    borderRadius: 8,
-    paddingVertical: 14,
+    justifyContent: 'space-around',
+    marginTop: 8,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#2A2A2A',
   },
-  logoutButtonText: {
-    color: '#F44336',
+  statItem: {
+    alignItems: 'center',
+  },
+  statItemValue: {
+    color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
+    marginTop: 6,
+  },
+  statItemLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  noDataText: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 16,
   },
 });
 

@@ -6,30 +6,34 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
   RefreshControl,
-  Share,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import RNFS from 'react-native-fs';
-import { useNavigation } from '@react-navigation/native';
-import StorageService from '../services/StorageService';
-import { Recording } from '../types';
+import { useNavigation, DrawerActions } from '@react-navigation/native';
+import RecordingService, { Recording } from '../services/RecordingService';
 
 const RecordingsScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [totalSize, setTotalSize] = useState(0);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadRecordings();
   }, []);
 
   const loadRecordings = async () => {
-    const data = await StorageService.getRecordings();
-    setRecordings(data);
-    const size = data.reduce((sum, r) => sum + r.fileSize, 0);
-    setTotalSize(size);
+    try {
+      const data = await RecordingService.getRecordings();
+      setRecordings(data);
+    } catch (e) {
+      console.error('Failed to load recordings:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const onRefresh = useCallback(async () => {
@@ -38,187 +42,142 @@ const RecordingsScreen: React.FC = () => {
     setIsRefreshing(false);
   }, []);
 
-  const formatDuration = (ms: number): string => {
-    const seconds = Math.floor(ms / 1000);
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+  const playRecording = async (recording: Recording) => {
+    if (playingId) return;
 
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    setPlayingId(recording.id);
+
+    try {
+      if (recording.size === 0) {
+        Alert.alert('Error', 'Recording file is empty');
+        return;
+      }
+
+      await RecordingService.playVideo(recording.path);
+    } catch (e: any) {
+      Alert.alert('Error', 'Failed to play: ' + e.message);
+    } finally {
+      setTimeout(() => setPlayingId(null), 1000);
     }
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes >= 1_000_000_000) {
-      return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-    }
-    if (bytes >= 1_000_000) {
-      return `${(bytes / 1_000_000).toFixed(1)} MB`;
-    }
-    if (bytes >= 1_000) {
-      return `${(bytes / 1_000).toFixed(1)} KB`;
-    }
-    return `${bytes} B`;
+  const deleteRecording = (recording: Recording) => {
+    Alert.alert('Delete Recording', `Delete "${recording.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await RecordingService.deleteRecording(recording.path);
+          loadRecordings();
+        },
+      },
+    ]);
+  };
+
+  const clearAll = () => {
+    if (recordings.length === 0) return;
+
+    Alert.alert('Delete All', 'Delete all recordings?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete All',
+        style: 'destructive',
+        onPress: async () => {
+          await RecordingService.deleteAllRecordings();
+          loadRecordings();
+        },
+      },
+    ]);
   };
 
   const formatDate = (timestamp: number): string => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return new Date(timestamp).toLocaleString();
   };
 
-  const deleteRecording = async (recording: Recording) => {
-    Alert.alert(
-      'Delete Recording?',
-      `Delete "${recording.filename}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete file
-              const exists = await RNFS.exists(recording.filepath);
-              if (exists) {
-                await RNFS.unlink(recording.filepath);
-              }
-              // Remove from storage
-              await StorageService.deleteRecording(recording.id);
-              await loadRecordings();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const deleteAllRecordings = () => {
-    if (recordings.length === 0) return;
-
-    Alert.alert(
-      'Delete All Recordings?',
-      `This will permanently delete all ${recordings.length} recordings (${formatFileSize(totalSize)}). This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete all files
-              for (const recording of recordings) {
-                const exists = await RNFS.exists(recording.filepath);
-                if (exists) {
-                  await RNFS.unlink(recording.filepath);
-                }
-              }
-              // Clear storage
-              await StorageService.clearRecordings();
-              await loadRecordings();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const shareRecording = async (recording: Recording) => {
-    try {
-      const exists = await RNFS.exists(recording.filepath);
-      if (!exists) {
-        Alert.alert('Error', 'File not found');
-        return;
-      }
-      await Share.share({
-        url: `file://${recording.filepath}`,
-        title: recording.filename,
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    }
+  const openDrawer = () => {
+    navigation.dispatch(DrawerActions.openDrawer());
   };
 
   const renderRecording = ({ item }: { item: Recording }) => (
-    <View style={styles.recordingItem}>
-      <View style={styles.recordingThumbnail}>
-        <Icon name="videocam" size={28} color="#1E88E5" />
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => playRecording(item)}
+      disabled={playingId === item.id}
+    >
+      <View style={styles.thumbnail}>
+        {playingId === item.id ? (
+          <ActivityIndicator color="#1E88E5" />
+        ) : (
+          <Icon name="play-circle-filled" size={48} color="#1E88E5" />
+        )}
       </View>
-      <View style={styles.recordingInfo}>
-        <Text style={styles.recordingFilename} numberOfLines={1}>
-          {item.filename}
-        </Text>
-        <Text style={styles.recordingMeta}>
-          {formatDuration(item.duration)} • {formatFileSize(item.fileSize)}
-        </Text>
-        <Text style={styles.recordingDate}>{formatDate(item.createdAt)}</Text>
+
+      <View style={styles.info}>
+        <Text style={styles.filename} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.date}>{formatDate(item.timestamp)}</Text>
+        <Text style={styles.size}>{RecordingService.formatSize(item.size)}</Text>
       </View>
-      <View style={styles.recordingActions}>
-        <TouchableOpacity onPress={() => shareRecording(item)} style={styles.actionButton}>
-          <Icon name="share" size={22} color="#FFF" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => deleteRecording(item)} style={styles.actionButton}>
+
+      <View style={styles.actions}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => deleteRecording(item)}>
           <Icon name="delete" size={22} color="#F44336" />
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="video-library" size={64} color="#444" />
+    <View style={styles.empty}>
+      <Icon name="videocam-off" size={64} color="#666" />
       <Text style={styles.emptyTitle}>No recordings yet</Text>
-      <Text style={styles.emptySubtitle}>Start streaming and tap record</Text>
+      <Text style={styles.emptyText}>Press the record button while streaming</Text>
     </View>
   );
 
+  if (isLoading) {
+    return (
+      <View style={styles.loading}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E1E1E" />
+        <ActivityIndicator size="large" color="#1E88E5" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor="#1E1E1E" />
+
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#FFF" />
+        <TouchableOpacity onPress={openDrawer} style={styles.menuButton}>
+          <Icon name="menu" size={28} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Recordings</Text>
+        <View style={styles.headerCenter}>
+          <Icon name="video-library" size={24} color="#1E88E5" />
+          <Text style={styles.headerTitle}>Recordings</Text>
+        </View>
         {recordings.length > 0 && (
-          <TouchableOpacity onPress={deleteAllRecordings} style={styles.deleteAllButton}>
+          <TouchableOpacity onPress={clearAll} style={styles.clearBtn}>
             <Icon name="delete-sweep" size={24} color="#F44336" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Stats Header */}
       {recordings.length > 0 && (
-        <View style={styles.statsCard}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{recordings.length}</Text>
-            <Text style={styles.statLabel}>Recordings</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatFileSize(totalSize)}</Text>
-            <Text style={styles.statLabel}>Total Size</Text>
-          </View>
+        <View style={styles.stats}>
+          <Text style={styles.statsText}>
+            {recordings.length} recording{recordings.length !== 1 ? 's' : ''} •{' '}
+            {RecordingService.formatSize(recordings.reduce((acc, r) => acc + r.size, 0))}
+          </Text>
         </View>
       )}
 
-      {/* Recordings List */}
       <FlatList
         data={recordings}
-        keyExtractor={(item) => item.id}
         renderItem={renderRecording}
-        ListEmptyComponent={renderEmpty}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={recordings.length === 0 ? styles.emptyList : styles.list}
+        ListEmptyComponent={renderEmpty}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#1E88E5" />
         }
@@ -228,73 +187,29 @@ const RecordingsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
+  container: { flex: 1, backgroundColor: '#121212' },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 12,
     backgroundColor: '#1E1E1E',
   },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  deleteAllButton: {
-    padding: 8,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    backgroundColor: '#1E3A5F',
-    margin: 16,
-    padding: 16,
-    borderRadius: 12,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    color: '#FFF',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  list: {
-    padding: 16,
-  },
-  emptyList: {
+  menuButton: { padding: 8 },
+  headerCenter: {
     flex: 1,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: 8,
   },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyTitle: {
-    color: '#999',
-    fontSize: 18,
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    color: '#666',
-    fontSize: 14,
-    marginTop: 8,
-  },
-  recordingItem: {
+  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginLeft: 8 },
+  clearBtn: { padding: 8 },
+  stats: { backgroundColor: '#1E1E1E', paddingHorizontal: 16, paddingBottom: 12 },
+  statsText: { color: '#888', fontSize: 12 },
+  list: { padding: 16 },
+  emptyList: { flex: 1 },
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1E1E1E',
@@ -302,40 +217,23 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-  recordingThumbnail: {
-    width: 56,
-    height: 56,
-    borderRadius: 8,
-    backgroundColor: '#2A3A4A',
+  thumbnail: {
+    width: 64,
+    height: 64,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#0D0D0D',
+    borderRadius: 8,
   },
-  recordingInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  recordingFilename: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  recordingMeta: {
-    color: '#999',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  recordingDate: {
-    color: '#666',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  recordingActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    padding: 8,
-    marginLeft: 4,
-  },
+  info: { flex: 1, marginLeft: 12 },
+  filename: { color: '#FFF', fontSize: 14, fontWeight: '600' },
+  date: { color: '#888', fontSize: 12, marginTop: 2 },
+  size: { color: '#666', fontSize: 11, marginTop: 2 },
+  actions: { flexDirection: 'row' },
+  actionBtn: { padding: 8 },
+  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  emptyTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', marginTop: 16 },
+  emptyText: { color: '#666', fontSize: 14, marginTop: 8, textAlign: 'center' },
 });
 
 export default RecordingsScreen;

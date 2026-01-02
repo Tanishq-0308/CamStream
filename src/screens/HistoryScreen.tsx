@@ -7,14 +7,16 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, DrawerActions } from '@react-navigation/native';
 import StorageService from '../services/StorageService';
 import { HistoryEntry } from '../types';
+import TTSService from '../services/TTSService';
 
 const HistoryScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -24,6 +26,11 @@ const HistoryScreen: React.FC = () => {
 
   const loadHistory = async () => {
     const data = await StorageService.getHistory();
+    console.log("Hello , this is a test notificaiton");
+    
+    await TTSService.speak("Hello, this is a test notificatioin");
+    await TTSService.setRate(0.8);
+    await TTSService.setLanguage('en-US');
     setHistory(data);
   };
 
@@ -34,220 +41,130 @@ const HistoryScreen: React.FC = () => {
   }, []);
 
   const clearHistory = () => {
-    if (history.length === 0) return;
-
-    Alert.alert(
-      'Clear History?',
-      'This will delete all history entries. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: async () => {
-            await StorageService.clearHistory();
-            await loadHistory();
-          },
+    Alert.alert('Clear History', 'Delete all history?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          await StorageService.clearHistory();
+          loadHistory();
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const getActionIcon = (action: string): { name: string; color: string } => {
+  const openDrawer = () => {
+    navigation.dispatch(DrawerActions.openDrawer());
+  };
+
+  const getIconForAction = (action: string) => {
     switch (action) {
-      case 'stream_started':
-        return { name: 'play-arrow', color: '#1E88E5' };
-      case 'stream_stopped':
-        return { name: 'stop', color: '#00C853' };
-      case 'recording_started':
-        return { name: 'fiber-manual-record', color: '#F44336' };
-      case 'recording_stopped':
-        return { name: 'stop-circle', color: '#FF9800' };
-      case 'settings_changed':
-        return { name: 'settings', color: '#00C853' };
-      case 'module_toggled':
-        return { name: 'extension', color: '#1E88E5' };
-      case 'login':
-        return { name: 'login', color: '#1E88E5' };
-      case 'logout':
-        return { name: 'logout', color: '#F44336' };
-      default:
-        return { name: 'info', color: '#999' };
+      case 'login': return 'login';
+      case 'logout': return 'logout';
+      case 'stream_started': return 'play-circle-filled';
+      case 'stream_stopped': return 'stop-circle';
+      case 'recording_started': return 'fiber-manual-record';
+      case 'recording_stopped': return 'stop';
+      case 'settings_changed': return 'settings';
+      case 'module_toggled': return 'extension';
+      default: return 'info';
     }
   };
 
-  const formatActionTitle = (action: string): string => {
+  const getColorForAction = (action: string) => {
     switch (action) {
-      case 'stream_started':
-        return 'Stream Started';
-      case 'stream_stopped':
-        return 'Stream Stopped';
-      case 'recording_started':
-        return 'Recording Started';
-      case 'recording_stopped':
-        return 'Recording Stopped';
-      case 'settings_changed':
-        return 'Settings Changed';
-      case 'module_toggled':
-        return 'Module Toggled';
-      case 'login':
-        return 'Logged In';
-      case 'logout':
-        return 'Logged Out';
-      default:
-        return action.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      case 'login': return '#4CAF50';
+      case 'logout': return '#F44336';
+      case 'stream_started': return '#1E88E5';
+      case 'stream_stopped': return '#FF9800';
+      case 'recording_started': return '#F44336';
+      case 'recording_stopped': return '#4CAF50';
+      default: return '#1E88E5';
     }
   };
 
-  const getDateGroup = (timestamp: number): string => {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const oneDay = 24 * 60 * 60 * 1000;
-    const oneWeek = 7 * oneDay;
-
-    if (diff < oneDay) return 'Today';
-    if (diff < 2 * oneDay) return 'Yesterday';
-    if (diff < oneWeek) return 'This Week';
-
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString();
   };
 
-  const formatTime = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  // Group history by date
-  const groupedHistory = history.reduce((groups, entry) => {
-    const group = getDateGroup(entry.timestamp);
-    if (!groups[group]) {
-      groups[group] = [];
-    }
-    groups[group].push(entry);
-    return groups;
-  }, {} as Record<string, HistoryEntry[]>);
-
-  const sections = Object.entries(groupedHistory).map(([title, data]) => ({
-    title,
-    data,
-  }));
-
-  const renderHistoryItem = ({ item }: { item: HistoryEntry }) => {
-    const { name, color } = getActionIcon(item.action);
-    return (
-      <View style={styles.historyItem}>
-        <View style={[styles.iconContainer, { backgroundColor: `${color}33` }]}>
-          <Icon name={name} size={20} color={color} />
-        </View>
-        <View style={styles.itemContent}>
-          <Text style={styles.actionTitle}>{formatActionTitle(item.action)}</Text>
-          {item.details && (
-            <Text style={styles.actionDetails} numberOfLines={1}>
-              {item.details}
-            </Text>
-          )}
-        </View>
-        <Text style={styles.timeText}>{formatTime(item.timestamp)}</Text>
+  const renderItem = ({ item }: { item: HistoryEntry }) => (
+    <View style={styles.historyItem}>
+      <View style={[styles.iconContainer, { backgroundColor: getColorForAction(item.action) + '20' }]}>
+        <Icon name={getIconForAction(item.action)} size={20} color={getColorForAction(item.action)} />
       </View>
-    );
-  };
-
-  const renderSectionHeader = (title: string) => (
-    <Text style={styles.sectionHeader}>{title}</Text>
+      <View style={styles.historyContent}>
+        <Text style={styles.historyAction}>{item.action.replace(/_/g, ' ').toUpperCase()}</Text>
+        {item.details && <Text style={styles.historyDetails}>{item.details}</Text>}
+        <Text style={styles.historyTime}>{formatTime(item.timestamp)}</Text>
+      </View>
+    </View>
   );
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="history" size={64} color="#444" />
+    <View style={styles.empty}>
+      <Icon name="history" size={64} color="#666" />
       <Text style={styles.emptyTitle}>No history yet</Text>
-      <Text style={styles.emptySubtitle}>Your actions will appear here</Text>
+      <Text style={styles.emptyText}>Your activity will appear here</Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor="#1E1E1E" />
+
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#FFF" />
+        <TouchableOpacity onPress={openDrawer} style={styles.menuButton}>
+          <Icon name="menu" size={28} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>History</Text>
+        <View style={styles.headerCenter}>
+          <Icon name="history" size={24} color="#1E88E5" />
+          <Text style={styles.headerTitle}>History</Text>
+        </View>
         {history.length > 0 && (
-          <TouchableOpacity onPress={clearHistory} style={styles.clearButton}>
+          <TouchableOpacity onPress={clearHistory} style={styles.clearBtn}>
             <Icon name="delete-sweep" size={24} color="#F44336" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* History List */}
-      {history.length === 0 ? (
-        renderEmpty()
-      ) : (
-        <FlatList
-          data={sections}
-          keyExtractor={(item) => item.title}
-          renderItem={({ item: section }) => (
-            <View>
-              {renderSectionHeader(section.title)}
-              {section.data.map((entry) => (
-                <View key={entry.id}>{renderHistoryItem({ item: entry })}</View>
-              ))}
-            </View>
-          )}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#1E88E5" />
-          }
-        />
-      )}
+      <FlatList
+        data={history}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={history.length === 0 ? styles.emptyList : styles.list}
+        ListEmptyComponent={renderEmpty}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#1E88E5" />
+        }
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
+  container: { flex: 1, backgroundColor: '#121212' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 12,
     backgroundColor: '#1E1E1E',
   },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  clearButton: {
-    padding: 8,
-  },
-  list: {
-    padding: 16,
-  },
-  sectionHeader: {
-    color: '#1E88E5',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  historyItem: {
+  menuButton: { padding: 8 },
+  headerCenter: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginLeft: 8,
+  },
+  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginLeft: 8 },
+  clearBtn: { padding: 8 },
+  list: { padding: 16 },
+  emptyList: { flex: 1 },
+  historyItem: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -255,44 +172,18 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 40,
     height: 40,
-    borderRadius: 8,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
-  itemContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  actionTitle: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  actionDetails: {
-    color: '#999',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  timeText: {
-    color: '#666',
-    fontSize: 12,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyTitle: {
-    color: '#999',
-    fontSize: 18,
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    color: '#666',
-    fontSize: 14,
-    marginTop: 8,
-  },
+  historyContent: { flex: 1 },
+  historyAction: { color: '#FFF', fontSize: 13, fontWeight: '600' },
+  historyDetails: { color: '#AAA', fontSize: 12, marginTop: 2 },
+  historyTime: { color: '#666', fontSize: 11, marginTop: 4 },
+  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  emptyTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', marginTop: 16 },
+  emptyText: { color: '#666', fontSize: 14, marginTop: 8 },
 });
 
 export default HistoryScreen;

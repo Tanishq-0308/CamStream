@@ -7,10 +7,18 @@ import {
   ModuleResponse,
 } from '../types';
 
+interface DeviceRegistration {
+  device_id: string;
+  device_name: string;
+  fcm_token: string;
+  platform: string;
+}
+
 class CamApi {
   private baseUrl: string = 'http://192.168.1.9:5000';
   private username: string = 'admin';
   private password: string = 'admin123';
+  authToken: string | undefined;
 
   private getConfig() {
     return {
@@ -125,6 +133,29 @@ class CamApi {
 
   async toggleQrSafety(enable: boolean): Promise<ModuleResponse> {
     return enable ? this.enableQrSafety() : this.disableQrSafety();
+  }
+
+  // Register device for push notifications
+  async registerDevice(data: DeviceRegistration): Promise<any> {
+    const response = await axios.post(
+      `${this.baseUrl}/api/notifications/register`,
+      data,
+      this.getConfig()
+    );
+    console.log("Response register Devices :", response.data);
+    
+    return response.data;
+  }
+
+  // Unregister device from push notifications
+  async unregisterDevice(fcm_token: string): Promise<any> {
+    const response = await axios.post(
+      `${this.baseUrl}/api/notifications/unregister`,
+      { fcm_token },
+      this.getConfig()
+    );
+    console.log("Response unregister Devices :", response.data);
+    return response.data;
   }
 }
 

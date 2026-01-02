@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import StorageService from '../services/StorageService';
+import NotificationService from '../services/NotificationServices';
 import CamApi from '../api/camApi';
 
 interface AuthContextType {
@@ -51,7 +52,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const checkAuthStatus = async () => {
     try {
       const savedToken = await StorageService.getToken();
-      
+
       if (!savedToken) {
         setIsLoading(false);
         return;
@@ -59,11 +60,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const savedUrl = await StorageService.getServerUrl();
       const { username, password } = await StorageService.getStreamCredentials();
-      
+
       // Set CamApi config
       CamApi.setBaseUrl(savedUrl);
       CamApi.setCredentials(username, password);
-      
+
       setToken(savedToken);
       setServerUrl(savedUrl);
 
@@ -84,7 +85,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setCameraIp(ip);
       setStreamUrl(buildStreamUrl(ip, username, password));
       setIsLoggedIn(true);
-      
+
     } catch (error) {
       console.error('Error checking auth status:', error);
     } finally {
@@ -96,16 +97,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       CamApi.setBaseUrl(url);
       CamApi.setCredentials(username, password);
-      
+
       console.log('Logging in to:', url);
       const response = await CamApi.login(username, password);
       console.log('Login successful');
-      
+
       // Save credentials
       await StorageService.saveToken(response.token);
       await StorageService.saveServerUrl(url);
       await StorageService.saveStreamCredentials(username, password);
-      
+
       setToken(response.token);
       setServerUrl(url);
 
@@ -120,17 +121,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('Network status failed, extracting IP from URL');
         ip = extractIpFromUrl(url);
       }
-      
+
       await StorageService.saveCameraIp(ip);
       setCameraIp(ip);
-      
+
       const stream = buildStreamUrl(ip, username, password);
       setStreamUrl(stream);
       console.log('Stream URL:', stream);
-      
+
       await StorageService.addHistory('login', `Logged in. Camera IP: ${ip}`);
       setIsLoggedIn(true);
-      
+
     } catch (error: any) {
       console.error('Login error:', error);
       throw new Error(error.response?.data?.message || error.message || 'Login failed');
@@ -139,15 +140,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     try {
-      await StorageService.addHistory('logout', 'User logged out');
-      await StorageService.clearToken();
-      setToken(null);
-      setCameraIp(null);
-      setStreamUrl(null);
-      setIsLoggedIn(false);
+      // Unregister device from notifications
+      const fcmToken = NotificationService.getCurrentToken();
+      if (fcmToken) {
+        await CamApi.unregisterDevice(fcmToken);
+        console.log("Device unregistered from notifications");
+      }
     } catch (error) {
       console.error('Error logging out:', error);
+      console.error('Failed to unregister device:', error);
     }
+    await StorageService.addHistory('logout', 'User logged out');
+    await StorageService.clearToken();
+    setToken(null);
+    setCameraIp(null);
+    setStreamUrl(null);
+    setIsLoggedIn(false);
   };
 
   return (
