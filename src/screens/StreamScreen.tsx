@@ -95,7 +95,7 @@ const StreamScreen: React.FC = () => {
       try {
         const duration = await RecordingService.getRecordingDuration();
         setRecordingDuration(duration);
-      } catch (e) {}
+      } catch (e) { }
     }, 1000);
   };
 
@@ -215,7 +215,18 @@ const StreamScreen: React.FC = () => {
             <VLCPlayer
               ref={vlcRef}
               style={styles.vlcPlayer}
-              source={{ uri: streamUrl }}
+              source={{
+                uri: streamUrl,
+                initOptions: [
+                  '--network-caching=150',
+                  '--live-caching=150',
+                  '--file-caching=150',
+                  '--clock-jitter=0',
+                  '--clock-synchro=0',
+                  '--drop-late-frames',
+                  '--skip-frames',
+                ]
+              }}
               paused={false}
               resizeMode="contain"
               onError={(e: any) => {

@@ -11,7 +11,7 @@ import {
   StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { useNavigation, DrawerActions, useFocusEffect } from '@react-navigation/native';
 import RecordingService, { Recording } from '../services/RecordingService';
 
 const RecordingsScreen: React.FC = () => {
@@ -20,6 +20,14 @@ const RecordingsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [recentRecordingId, setRecentRecordingId] = useState<string | null>(null);
+
+  // Refresh when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadRecordings();
+    }, [])
+  );
 
   useEffect(() => {
     loadRecordings();
@@ -29,6 +37,23 @@ const RecordingsScreen: React.FC = () => {
     try {
       const data = await RecordingService.getRecordings();
       setRecordings(data);
+      
+      // Mark most recent recording (within last 5 seconds) as "recent"
+      if (data.length > 0) {
+        const newest = data[0];
+        const age = Date.now() - newest.timestamp;
+        
+        if (age < 5000) {
+          setRecentRecordingId(newest.id);
+          
+          // Clear after 3 seconds
+          setTimeout(() => {
+            setRecentRecordingId(null);
+          }, 3000);
+        } else {
+          setRecentRecordingId(null);
+        }
+      }
     } catch (e) {
       console.error('Failed to load recordings:', e);
     } finally {
@@ -45,19 +70,39 @@ const RecordingsScreen: React.FC = () => {
   const playRecording = async (recording: Recording) => {
     if (playingId) return;
 
+    // Check if this is a recent recording
+    if (recentRecordingId === recording.id) {
+      Alert.alert(
+        'Please Wait',
+        'Recording is being finalized. Try again in a moment.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setPlayingId(recording.id);
 
     try {
-      if (recording.size === 0) {
+      // Verify file is ready
+      const freshRecordings = await RecordingService.getRecordings();
+      const freshRecording = freshRecordings.find(r => r.id === recording.id);
+
+      if (!freshRecording) {
+        Alert.alert('Error', 'Recording not found');
+        return;
+      }
+
+      if (freshRecording.size === 0) {
         Alert.alert('Error', 'Recording file is empty');
         return;
       }
 
-      // Small delay to ensure file is ready
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Add small delay to ensure file is flushed
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      await RecordingService.playVideo(recording.path);
+      await RecordingService.playVideo(freshRecording.path);
     } catch (e: any) {
+      console.error('Play error:', e);
       Alert.alert('Error', 'Failed to play: ' + e.message);
     } finally {
       setTimeout(() => setPlayingId(null), 1000);
@@ -102,33 +147,46 @@ const RecordingsScreen: React.FC = () => {
     navigation.dispatch(DrawerActions.openDrawer());
   };
 
-  const renderRecording = ({ item }: { item: Recording }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => playRecording(item)}
-      disabled={playingId === item.id}
-    >
-      <View style={styles.thumbnail}>
-        {playingId === item.id ? (
-          <ActivityIndicator color="#1E88E5" />
-        ) : (
-          <Icon name="play-circle-filled" size={48} color="#1E88E5" />
-        )}
-      </View>
+  const renderRecording = ({ item }: { item: Recording }) => {
+    const isRecent = recentRecordingId === item.id;
+    
+    return (
+      <TouchableOpacity
+        style={[styles.card, isRecent && styles.cardRecent]}
+        onPress={() => playRecording(item)}
+        disabled={playingId === item.id}
+      >
+        <View style={styles.thumbnail}>
+          {playingId === item.id ? (
+            <ActivityIndicator color="#1E88E5" />
+          ) : isRecent ? (
+            <ActivityIndicator color="#FF9800" size="small" />
+          ) : (
+            <Icon name="play-circle-filled" size={48} color="#1E88E5" />
+          )}
+        </View>
 
-      <View style={styles.info}>
-        <Text style={styles.filename} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.date}>{formatDate(item.timestamp)}</Text>
-        <Text style={styles.size}>{RecordingService.formatSize(item.size)}</Text>
-      </View>
+        <View style={styles.info}>
+          <Text style={styles.filename} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.date}>{formatDate(item.timestamp)}</Text>
+          <View style={styles.sizeRow}>
+            <Text style={styles.size}>{RecordingService.formatSize(item.size)}</Text>
+            {isRecent && <Text style={styles.processingText}>Processing...</Text>}
+          </View>
+        </View>
 
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => deleteRecording(item)}>
-          <Icon name="delete" size={22} color="#F44336" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.actions}>
+          <TouchableOpacity 
+            style={styles.actionBtn} 
+            onPress={() => deleteRecording(item)}
+            disabled={isRecent}
+          >
+            <Icon name="delete" size={22} color={isRecent ? "#666" : "#F44336"} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmpty = () => (
     <View style={styles.empty}>
@@ -220,6 +278,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
+  cardRecent: {
+    borderWidth: 1,
+    borderColor: '#FF9800',
+    opacity: 0.7,
+  },
   thumbnail: {
     width: 64,
     height: 64,
@@ -231,7 +294,9 @@ const styles = StyleSheet.create({
   info: { flex: 1, marginLeft: 12 },
   filename: { color: '#FFF', fontSize: 14, fontWeight: '600' },
   date: { color: '#888', fontSize: 12, marginTop: 2 },
-  size: { color: '#666', fontSize: 11, marginTop: 2 },
+  sizeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  size: { color: '#666', fontSize: 11 },
+  processingText: { color: '#FF9800', fontSize: 11, marginLeft: 8 },
   actions: { flexDirection: 'row' },
   actionBtn: { padding: 8 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },

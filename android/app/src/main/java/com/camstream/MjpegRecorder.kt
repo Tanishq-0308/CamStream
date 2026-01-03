@@ -26,6 +26,9 @@ object MjpegRecorder {
         }
 
         try {
+            // Cancel any lingering sessions first
+            FFmpegKit.cancel()
+
             val recordingsDir = File(
                 context.getExternalFilesDir(Environment.DIRECTORY_MOVIES),
                 "CamStreamRecordings"
@@ -38,12 +41,11 @@ object MjpegRecorder {
             val outputFile = File(recordingsDir, "recording_$timestamp.mp4")
             currentOutputPath = outputFile.absolutePath
 
-            // Create latch to wait for completion
             sessionCompleteLatch = CountDownLatch(1)
 
-            val command = "-r 15 -i \"$streamUrl\" " +
+            val command = "-i \"$streamUrl\" " +
                     "-c:v libx264 -preset ultrafast -crf 23 " +
-                    "-r 30 -vsync cfr -pix_fmt yuv420p " +
+                    "-vsync vfr -pix_fmt yuv420p " +
                     "-movflags frag_keyframe+empty_moov+faststart " +
                     "-t 86400 \"${currentOutputPath}\""
 
@@ -89,20 +91,29 @@ object MjpegRecorder {
             Log.d(TAG, "Stopping recording...")
             
             val outputPath = currentOutputPath
-            
-            // Cancel the FFmpeg session
+
+            // Cancel current session
             currentSession?.cancel()
+            
+            // Wait for callback
+            val completed = sessionCompleteLatch?.await(5, TimeUnit.SECONDS) ?: false
+            Log.d(TAG, "FFmpeg callback completed: $completed")
 
-            // Wait for FFmpeg to fully complete (max 3 seconds)
-            val completed = sessionCompleteLatch?.await(3, TimeUnit.SECONDS) ?: false
-            Log.d(TAG, "FFmpeg session completed: $completed")
-
+            // Force cancel ALL FFmpeg sessions
+            FFmpegKit.cancel()
+            
+            // Clear references
             isRecording = false
             currentOutputPath = null
             currentSession = null
             sessionCompleteLatch = null
 
-            // Additional wait to ensure file is flushed
+            // Wait for file system to flush
+            Thread.sleep(2000)
+
+            // Force garbage collection to release file handles
+            System.gc()
+            
             Thread.sleep(500)
 
             val file = File(outputPath ?: "")
@@ -117,6 +128,7 @@ object MjpegRecorder {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop recording", e)
             isRecording = false
+            FFmpegKit.cancel()
             return null
         }
     }
