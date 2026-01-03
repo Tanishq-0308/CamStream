@@ -16,6 +16,7 @@ import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useAuth } from '../context/AuthContext';
 import CamApi from '../api/camApi';
+import TTSService from '../services/TTSService';
 import StorageService from '../services/StorageService';
 import { NetworkStatus, CameraSettings, SystemStats } from '../types';
 
@@ -24,6 +25,8 @@ const SettingsScreen: React.FC = () => {
   const { logout, cameraIp } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [togglingTts, setTogglingTts] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSavingVideo, setIsSavingVideo] = useState(false);
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null);
@@ -95,6 +98,30 @@ const SettingsScreen: React.FC = () => {
       setSystemStats(stats);
     } catch (error) {
       console.error('Error loading system stats:', error);
+    }
+  };
+
+  // Load TTS state in loadAllSettings
+  const loadTtsState = async () => {
+    const enabled = await StorageService.getTtsEnabled();
+    setTtsEnabled(enabled);
+  };
+
+  // Toggle function
+  const toggleTts = async (value: boolean) => {
+    setTogglingTts(true);
+    try {
+      await StorageService.saveTtsEnabled(value);
+      setTtsEnabled(value);
+
+      // Test TTS when enabled
+      if (value) {
+        await TTSService.speak('Text to speech enabled');
+      }
+    } catch (error) {
+      console.error('Error toggling TTS:', error);
+    } finally {
+      setTogglingTts(false);
     }
   };
 
@@ -256,7 +283,7 @@ const SettingsScreen: React.FC = () => {
       >
         {/* Network Status Card */}
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
+          {/* <View style={styles.cardHeader}>
             <Icon
               name="wifi"
               size={24}
@@ -278,7 +305,7 @@ const SettingsScreen: React.FC = () => {
                 {networkStatus?.wifi?.connected ? 'Connected' : 'Disconnected'}
               </Text>
             </View>
-          </View>
+          </View> */}
           <View style={styles.cardContent}>
             <InfoRow icon="router" label="SSID" value={networkStatus?.wifi?.ssid || 'N/A'} />
             <InfoRow icon="language" label="Camera IP" value={cameraIp || 'N/A'} />
@@ -298,7 +325,7 @@ const SettingsScreen: React.FC = () => {
             <Text style={styles.cardTitle}>Quick Settings</Text>
           </View>
           <View style={styles.cardContent}>
-            <ToggleRow
+            {/* <ToggleRow
               icon="flip"
               label="Flip Horizontal"
               description="Mirror the video horizontally"
@@ -314,7 +341,7 @@ const SettingsScreen: React.FC = () => {
               value={cameraSettings.flip_v}
               onValueChange={toggleFlipV}
               isLoading={togglingFlipV}
-            />
+            /> */}
             <View style={styles.divider} />
             <ToggleRow
               icon="face"
@@ -332,6 +359,15 @@ const SettingsScreen: React.FC = () => {
               value={qrSafetyEnabled}
               onValueChange={toggleQrSafety}
               isLoading={togglingQrSafety}
+            />
+            <View style={styles.divider} />
+            <ToggleRow
+              icon="record-voice-over"
+              label="Speak Notifications"
+              description="Read notifications out loud"
+              value={ttsEnabled}
+              onValueChange={toggleTts}
+              isLoading={togglingTts}
             />
           </View>
         </View>

@@ -9,7 +9,8 @@ class RecordingPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
         return listOf(
             RecordingModule(reactContext),
-            TTSModule(reactContext)
+            TTSModule(reactContext),
+            HotspotModule(reactContext)
         )
     }
 

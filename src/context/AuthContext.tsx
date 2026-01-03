@@ -10,7 +10,7 @@ interface AuthContextType {
   cameraIp: string | null;
   serverUrl: string;
   streamUrl: string | null;
-  login: (username: string, password: string, serverUrl: string) => Promise<void>;
+  login: (serverUrl: string,username: string, password: string ) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -93,7 +93,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const login = async (username: string, password: string, url: string) => {
+  const login = async (url: string, username: string, password: string, ) => {
     try {
       CamApi.setBaseUrl(url);
       CamApi.setCredentials(username, password);

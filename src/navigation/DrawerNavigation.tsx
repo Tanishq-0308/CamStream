@@ -80,12 +80,12 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
             isActive={currentRoute === 'Recordings'}
             onPress={() => props.navigation.navigate('Recordings')}
           />
-          <DrawerItem
+          {/* <DrawerItem
             icon="history"
             label="History"
             isActive={currentRoute === 'History'}
             onPress={() => props.navigation.navigate('History')}
-          />
+          /> */}
           <DrawerItem
             icon="settings"
             label="Settings"

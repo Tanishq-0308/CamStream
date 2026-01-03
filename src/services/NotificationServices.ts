@@ -83,7 +83,7 @@ class NotificationService {
     try {
       const fcm_token = await this.getToken();
       if (!fcm_token) {
-        console.error('No FCM token available');
+        console.log('No FCM token available');
         return false;
       }
 
@@ -96,17 +96,23 @@ class NotificationService {
         platform: deviceInfo.platform,
       };
 
-      console.log('Registering device:', registrationData);
+      console.log('=== NOTIFICATION REGISTER ===');
+      console.log('BaseUrl:', CamApi.getBaseUrl());
+      console.log('Data:', JSON.stringify(registrationData, null, 2));
 
-      await CamApi.registerDevice(registrationData);
+      const response = await CamApi.registerDevice(registrationData);
+      console.log('Response:', response);
 
       this.isRegistered = true;
       await StorageService.saveDeviceRegistered(true);
 
       console.log('Device registered successfully');
       return true;
-    } catch (error) {
-      console.error('Error registering device:', error);
+    } catch (error: any) {
+      console.log('=== REGISTRATION ERROR ===');
+      console.log('Status:', error.response?.status);
+      console.log('Response:', JSON.stringify(error.response?.data, null, 2));
+      console.log('Message:', error.message);
       return false;
     }
   }
