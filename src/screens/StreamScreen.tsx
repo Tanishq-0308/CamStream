@@ -189,7 +189,7 @@ const StreamScreen: React.FC = () => {
           <Icon name="menu" size={28} color="#FFF" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Icon name="videocam" size={24} color="#1E88E5" />
+          <Icon name="videocam" size={24} color="#28316A" />
           <Text style={styles.headerTitle}>Live Stream</Text>
         </View>
         <View style={styles.headerRight}>
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E88E5',
+    backgroundColor: '#28316A',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   connectButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E88E5',
+    backgroundColor: '#28316A',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   connectBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E88E5',
+    backgroundColor: '#28316A',
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 8,

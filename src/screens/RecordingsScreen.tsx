@@ -53,6 +53,9 @@ const RecordingsScreen: React.FC = () => {
         return;
       }
 
+      // Small delay to ensure file is ready
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       await RecordingService.playVideo(recording.path);
     } catch (e: any) {
       Alert.alert('Error', 'Failed to play: ' + e.message);

@@ -11,11 +11,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Clipboard from '@react-native-clipboard/clipboard';
 import HotspotService from '../services/HotspotService';
 import StorageService from '../services/StorageService';
+import icon from "../../assets/icon.png"
 
 interface PinSetupScreenProps {
   onComplete: (ip: string) => void;
@@ -79,7 +81,7 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ onComplete, onSkip }) =
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       console.log(`Finding cam device (attempt ${attempt}/3)...`);
-      
+
       const ip = await HotspotService.findCamDevice();
 
       if (ip) {
@@ -111,7 +113,7 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ onComplete, onSkip }) =
   };
 
   const renderEnterPin = () => (
-    <ScrollView 
+    <ScrollView
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -159,7 +161,7 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ onComplete, onSkip }) =
   );
 
   const renderSetupHotspot = () => (
-    <ScrollView 
+    <ScrollView
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -230,7 +232,7 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ onComplete, onSkip }) =
   );
 
   const renderError = () => (
-    <ScrollView 
+    <ScrollView
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
@@ -252,15 +254,19 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ onComplete, onSkip }) =
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <StatusBar barStyle="light-content" backgroundColor="#121212" />
 
       <View style={styles.header}>
-        <Icon name="videocam" size={40} color="#1E88E5" />
-        <Text style={styles.headerTitle}>CamStream Setup</Text>
+        <Image
+          source={icon}
+          style={styles.logo}
+        />
+        {/* <Icon name="videocam" size={40} color="#1E88E5" />
+        <Text style={styles.headerTitle}>CamStream Setup</Text> */}
       </View>
 
       {step === 'enter_pin' && renderEnterPin()}
@@ -275,6 +281,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  logo: {
+    height: 200,
+    width: 250
   },
   header: {
     alignItems: 'center',

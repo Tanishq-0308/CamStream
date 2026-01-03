@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import {
   createDrawerNavigator,
@@ -18,6 +19,7 @@ import StreamScreen from '../screens/StreamScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import RecordingsScreen from '../screens/RecordingsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import icon from "../../assets/icon.png"
 
 const Drawer = createDrawerNavigator();
 
@@ -58,10 +60,16 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
         {/* Header */}
         <View style={styles.drawerHeader}>
           <View style={styles.logoContainer}>
-            <Icon name="videocam" size={40} color="#1E88E5" />
+            
+                    <Image
+                      source={icon}
+                      style={styles.logo}
+                    />
+
+            {/* <Icon name="videocam" size={40} color="#1E88E5" /> */}
           </View>
-          <Text style={styles.appName}>CamStream</Text>
-          <Text style={styles.cameraIp}>{cameraIp || 'Not connected'}</Text>
+          <Text style={styles.appName}>DynaStream</Text>
+          {/* <Text style={styles.cameraIp}>{cameraIp || 'Not connected'}</Text> */}
         </View>
 
         <View style={styles.divider} />
@@ -136,6 +144,10 @@ const styles = StyleSheet.create({
   drawerContainer: {
     flex: 1,
     backgroundColor: '#1E1E1E',
+  },
+  logo: {
+    height: 100,
+    width: 150
   },
   drawerScroll: {
     flexGrow: 1,

@@ -11,10 +11,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../context/AuthContext';
 import StorageService from '../services/StorageService';
+import logo from "../../assets/logo.png"
 
 interface LoginScreenProps {
   initialIp?: string | null;
@@ -86,9 +88,15 @@ const loadSavedSettings = async () => {
       <StatusBar barStyle="light-content" backgroundColor="#121212" />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Icon name="videocam" size={60} color="#1E88E5" />
+          
+            <Image
+            resizeMode='contain'
+                source={logo}
+                style={styles.logo}
+            />
+          {/* <Icon name="videocam" size={60} color="#1E88E5" />
           <Text style={styles.title}>CamStream</Text>
-          <Text style={styles.subtitle}>Connect to your camera</Text>
+          <Text style={styles.subtitle}>Connect to your camera</Text> */}
         </View>
 
         <View style={styles.form}>
@@ -158,14 +166,17 @@ const loadSavedSettings = async () => {
           </TouchableOpacity>
         </View>
 
-        {initialIp && (
+        {/* {initialIp && (
           <View style={styles.detectedInfo}>
             <Icon name="check-circle" size={20} color="#4CAF50" />
             <Text style={styles.detectedText}>
               Camera detected at {initialIp}
             </Text>
           </View>
-        )}
+        )} */}
+                <View style={{padding:20,}}>
+            <Text style={styles.footerText}>By continuing you agree to our <Text style={{color:'#28316A'}}>Terms of Service</Text> & <Text style={{color:'#28316A'}}>Privacy Policy</Text></Text>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -176,6 +187,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
+    logo:{
+        height:200,
+        width:250
+    },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -223,7 +238,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1E88E5',
+    backgroundColor: '#28316A',
     borderRadius: 12,
     height: 56,
     marginTop: 8,
@@ -248,6 +263,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 8,
   },
+    footerText:{
+        fontSize:12,
+        fontWeight:700,
+        textAlign:'center',
+        color:'#ffffff'
+    }
 });
 
 export default LoginScreen;

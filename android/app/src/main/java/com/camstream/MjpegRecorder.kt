@@ -8,6 +8,8 @@ import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 object MjpegRecorder {
     private const val TAG = "MjpegRecorder"
@@ -15,6 +17,7 @@ object MjpegRecorder {
     private var currentOutputPath: String? = null
     private var isRecording = false
     private var recordingStartTime: Long = 0
+    private var sessionCompleteLatch: CountDownLatch? = null
 
     fun startRecording(context: android.content.Context, streamUrl: String): String? {
         if (isRecording) {
@@ -35,16 +38,14 @@ object MjpegRecorder {
             val outputFile = File(recordingsDir, "recording_$timestamp.mp4")
             currentOutputPath = outputFile.absolutePath
 
-            // Fixed FFmpeg command:
-            // -r 15: Set input frame rate (adjust based on your camera's FPS)
-            // -i: input URL
-            // -c:v libx264: H.264 codec
-            // -preset ultrafast: fast encoding
-            // -crf 23: quality
-            // -r 30: output frame rate
-            // -vsync cfr: constant frame rate
-            // -pix_fmt yuv420p: pixel format for compatibility
-            val command = "-r 15 -i \"$streamUrl\" -c:v libx264 -preset ultrafast -crf 23 -r 30 -vsync cfr -pix_fmt yuv420p -t 86400 \"${currentOutputPath}\""
+            // Create latch to wait for completion
+            sessionCompleteLatch = CountDownLatch(1)
+
+            val command = "-r 15 -i \"$streamUrl\" " +
+                    "-c:v libx264 -preset ultrafast -crf 23 " +
+                    "-r 30 -vsync cfr -pix_fmt yuv420p " +
+                    "-movflags frag_keyframe+empty_moov+faststart " +
+                    "-t 86400 \"${currentOutputPath}\""
 
             Log.d(TAG, "Starting recording: $command")
 
@@ -65,6 +66,7 @@ object MjpegRecorder {
                 }
 
                 isRecording = false
+                sessionCompleteLatch?.countDown()
             }
 
             isRecording = true
@@ -84,14 +86,24 @@ object MjpegRecorder {
         }
 
         try {
+            Log.d(TAG, "Stopping recording...")
+            
+            val outputPath = currentOutputPath
+            
+            // Cancel the FFmpeg session
             currentSession?.cancel()
 
+            // Wait for FFmpeg to fully complete (max 3 seconds)
+            val completed = sessionCompleteLatch?.await(3, TimeUnit.SECONDS) ?: false
+            Log.d(TAG, "FFmpeg session completed: $completed")
+
             isRecording = false
-            val outputPath = currentOutputPath
             currentOutputPath = null
             currentSession = null
+            sessionCompleteLatch = null
 
-            Thread.sleep(1000)  // Wait for file to finalize
+            // Additional wait to ensure file is flushed
+            Thread.sleep(500)
 
             val file = File(outputPath ?: "")
             if (file.exists() && file.length() > 0) {
@@ -99,10 +111,12 @@ object MjpegRecorder {
                 return outputPath
             } else {
                 Log.w(TAG, "Recording file is empty or missing")
+                file.delete()
                 return null
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop recording", e)
+            isRecording = false
             return null
         }
     }
